@@ -236,6 +236,186 @@ automaticamente:
 ./scripts/verify.sh
 ```
 
+## Executar pelo Eclipse
+
+Sim, o projeto pode ser importado e executado diretamente no Eclipse. Para o
+ambiente local, o Eclipse executa a aplicação Spring Boot e o Docker executa
+somente o Valkey.
+
+### 1. Instalar os pré-requisitos
+
+Instale:
+
+- Git;
+- JDK 17;
+- Docker Desktop com Docker Compose v2;
+- Eclipse IDE for Java Developers;
+- opcionalmente, **Spring Tools 4** pelo Eclipse Marketplace.
+
+Confirme no terminal:
+
+```bash
+java -version
+docker --version
+docker compose version
+git --version
+```
+
+O resultado de `java -version` deve indicar Java 17 ou uma versão posterior
+compatível.
+
+### 2. Baixar o projeto
+
+No terminal:
+
+```bash
+git clone https://github.com/SilvioCristiano/Resilient-HA-OCI-Cache.git
+cd Resilient-HA-OCI-Cache
+```
+
+Também é possível usar no Eclipse:
+
+1. Acesse **File → Import**.
+2. Selecione **Git → Projects from Git**.
+3. Escolha **Clone URI**.
+4. Informe a URL do repositório.
+5. Ao final, selecione a importação como projeto Maven existente.
+
+### 3. Importar como projeto Maven
+
+Se o repositório já estiver na máquina:
+
+1. Acesse **File → Import**.
+2. Selecione **Maven → Existing Maven Projects**.
+3. Em **Root Directory**, escolha a pasta do repositório.
+4. Confirme que o arquivo `pom.xml` foi selecionado.
+5. Clique em **Finish**.
+6. Aguarde o Eclipse baixar e indexar as dependências.
+
+Se ainda houver erros no projeto, clique com o botão direito no projeto e
+selecione **Maven → Update Project**, marque **Force Update of Snapshots/Releases**
+e confirme.
+
+### 4. Configurar o Java 17 no Eclipse
+
+1. Acesse **Window → Preferences → Java → Installed JREs**.
+2. Adicione ou selecione o JDK 17.
+3. Clique com o botão direito no projeto e abra **Properties**.
+4. Em **Java Build Path**, confirme que o JDK 17 está selecionado.
+5. Em **Java Compiler**, use o nível de compilação 17.
+
+### 5. Iniciar o Valkey local
+
+Com o Docker Desktop em execução, abra um terminal na raiz do projeto. Pode ser
+o terminal do sistema ou a view **Terminal** do Eclipse:
+
+```bash
+docker compose up -d redis
+docker compose ps
+```
+
+O serviço `redis` deve aparecer como saudável e publicar a porta `6379`.
+
+### 6. Criar a configuração de execução
+
+Sem o Spring Tools:
+
+1. Acesse **Run → Run Configurations → Java Application**.
+2. Clique em **New launch configuration**.
+3. Em **Project**, selecione o projeto importado.
+4. Em **Main class**, selecione
+   `com.example.ocicache.OciCacheApplication`.
+5. Na aba **Environment**, adicione:
+
+   ```text
+   SPRING_PROFILES_ACTIVE=local
+   ```
+
+6. Clique em **Apply** e depois em **Run**.
+
+Com o Spring Tools instalado:
+
+1. Acesse **Run → Run Configurations → Spring Boot App**.
+2. Clique em **New launch configuration**.
+3. Selecione o projeto e a classe
+   `com.example.ocicache.OciCacheApplication`.
+4. Na aba de profile ou em **Environment**, configure:
+
+   ```text
+   SPRING_PROFILES_ACTIVE=local
+   ```
+
+5. Clique em **Apply** e depois em **Run**.
+
+O profile `local` conecta a aplicação a `localhost:6379`, desabilita TLS e não
+exige uma conta OCI. No console do Eclipse, aguarde a mensagem indicando que a
+aplicação iniciou na porta `8080`.
+
+### 7. Executar os testes no Eclipse
+
+1. Clique com o botão direito no projeto.
+2. Selecione **Run As → Maven test**.
+3. Confirme que o build termina com `BUILD SUCCESS`.
+
+Também é possível executar uma classe individual em `src/test/java` usando
+**Run As → JUnit Test**.
+
+### 8. Validar a aplicação
+
+Em outro terminal, na raiz do projeto:
+
+```bash
+./scripts/smoke-test.sh
+```
+
+No Windows, execute o script usando Git Bash ou WSL. Resultado esperado:
+
+```text
+✅ Cache key/value com TTL passou
+✅ Producer idempotente passou: redisId=<id>
+✅ Health e status regional passaram
+✅ Smoke test completo passou
+```
+
+Também é possível abrir no navegador:
+
+- `http://localhost:8080/actuator/health`;
+- `http://localhost:8080/api/cache-status`;
+- `http://localhost:8080/actuator/prometheus`.
+
+O producer pode ser testado no terminal:
+
+```bash
+curl -X POST http://localhost:8080/api/events \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: eclipse-order-42' \
+  -d '{"orderId":42,"status":"CREATED"}'
+```
+
+### 9. Encerrar
+
+Interrompa a aplicação pelo botão vermelho **Terminate** no console do Eclipse.
+Depois encerre o Valkey:
+
+```bash
+docker compose down
+```
+
+Use `docker compose down -v` somente quando quiser apagar também os dados locais
+do Valkey.
+
+### Problemas comuns no Eclipse
+
+| Problema | Correção |
+|---|---|
+| `Connection refused: localhost/127.0.0.1:6379` | Inicie o Docker Desktop e execute `docker compose up -d redis` |
+| A aplicação tenta usar endpoints OCI | Confirme `SPRING_PROFILES_ACTIVE=local` na configuração de execução |
+| Porta `8080` ocupada | Encerre o processo existente ou informe `SERVER_PORT=8081` e use essa porta no teste |
+| Porta `6379` ocupada | Encerre outra instalação Redis/Valkey antes de iniciar o container |
+| Classes ou dependências não encontradas | Execute **Maven → Update Project** e depois **Project → Clean** |
+| Versão Java incompatível | Configure o projeto e a execução para usar o JDK 17 |
+| Script sem permissão no Linux/macOS | Execute `chmod +x scripts/smoke-test.sh` |
+
 ## Arquitetura high level
 
 ![Arquitetura high level do OCI Cache com continuidade regional e failover controlado](docs/images/oci-cache-high-level.png)

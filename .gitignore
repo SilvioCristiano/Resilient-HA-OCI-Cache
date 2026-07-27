@@ -3,6 +3,11 @@ build/
 .gradle/
 .idea/
 .vscode/
+.metadata/
+.settings/
+.classpath
+.factorypath
+.project
 *.iml
 .DS_Store
 *.log
