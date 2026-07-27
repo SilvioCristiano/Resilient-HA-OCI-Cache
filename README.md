@@ -98,6 +98,10 @@ automaticamente:
 
 ![Arquitetura high level do OCI Cache com continuidade regional e failover controlado](docs/images/oci-cache-high-level.png)
 
+## Arquitetura técnica
+
+![Arquitetura técnica](imagem2.png "Arquitetura técnica")
+
 O OCI Cache acelera acesso e transporta eventos, mas não substitui o banco ou
 log durável cross-region quando os dados não podem ser reconstruídos. O
 `eventId` e o efeito de negócio devem ser gravados juntos no sistema definitivo
