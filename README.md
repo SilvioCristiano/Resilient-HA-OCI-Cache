@@ -7,12 +7,153 @@ provisionamento opcional de disaster recovery (DR).
 O projeto pode ser executado localmente sem conta OCI. O ambiente local usa
 Valkey em container e exercita as mesmas APIs Redis utilizadas no OCI Cache.
 
+## O que este código faz
+
+Este projeto é uma aplicação Spring Boot que usa o OCI Cache, compatível com
+Redis/Valkey, para três funções principais:
+
+- guardar dados temporários em cache;
+- publicar eventos em Redis Streams;
+- consumir e processar esses eventos com segurança.
+
+### Fluxo básico
+
+```text
+Cliente
+   ↓
+Aplicação Spring Boot
+   ↓
+HaCacheRouter
+   ↓
+OCI Cache da região ativa
+   ↓ falha
+OCI Cache da região de DR
+```
+
+### Cache
+
+Quando a aplicação precisa consultar um dado:
+
+1. Primeiro procura no OCI Cache.
+2. Se encontrar, devolve rapidamente.
+3. Se não encontrar, consulta o sistema definitivo.
+4. Salva o resultado no cache com um tempo de expiração, o **TTL**.
+
+O OCI Cache é tratado como dado temporário. O banco ou sistema definitivo
+continua sendo a fonte oficial.
+
+### Producer
+
+O producer recebe uma requisição e publica uma mensagem em um Redis Stream
+usando `XADD`.
+
+Ele é idempotente: se a mesma requisição for enviada novamente com a mesma chave
+de idempotência, o projeto evita publicar o mesmo evento duas vezes.
+
+```text
+Requisição
+   ↓
+Verifica a chave de idempotência
+   ↓
+Publica no Stream somente se ainda não existir
+```
+
+A verificação da chave e a publicação são executadas atomicamente por um script
+Lua.
+
+### Consumer
+
+O consumer lê as mensagens usando Consumer Groups e `XREADGROUP`.
+
+```text
+XREADGROUP
+   ↓
+Processa a mensagem
+   ↓
+Sucesso?
+ ├─ Sim → XACK
+ └─ Não → mantém na PEL para tentar novamente
+```
+
+O `XACK` só acontece depois que o processamento termina com sucesso. Isso evita
+marcar uma mensagem como concluída antes de executar o trabalho.
+
+### Retry e DLQ
+
+Se o processamento falhar temporariamente, a mensagem pode ser tentada
+novamente:
+
+- o número de tentativas é limitado;
+- existe backoff exponencial com jitter;
+- erros permanentes não são repetidos indefinidamente;
+- depois do limite, a mensagem é movida para a Dead Letter Stream, ou **DLQ**.
+
+A movimentação para a DLQ e o `XACK` são feitos atomicamente para reduzir o risco
+de perda ou duplicação indevida.
+
+### PEL e mensagens órfãs
+
+Mensagens entregues, mas ainda não confirmadas, ficam na Pending Entries List,
+ou **PEL**. O projeto:
+
+- monitora a quantidade de mensagens pendentes;
+- usa `XPENDING` para acompanhar o backlog;
+- usa `XAUTOCLAIM` para recuperar mensagens abandonadas por consumers que
+  morreram;
+- expõe métricas para alertas.
+
+### Alta disponibilidade
+
+O `HaCacheRouter` mantém os endpoints das regiões disponíveis. Quando o OCI
+Cache ativo apresenta falhas consecutivas:
+
+1. O circuit breaker impede chamadas excessivas ao endpoint com problema.
+2. O sistema verifica a região de standby.
+3. Se estiver saudável, passa a usar o endpoint de DR.
+4. Se o provisionamento automático estiver habilitado, o OCI SDK pode iniciar a
+   criação de outro cluster.
+5. O novo cluster só é usado depois de ficar ativo e passar nas verificações de
+   saúde.
+
+O projeto evita failback automático por padrão para reduzir o risco de
+alternância constante entre regiões e de split-brain.
+
+### Segurança
+
+A conexão foi projetada para usar:
+
+- TLS;
+- FQDN em vez de IP fixo;
+- credenciais por variável de ambiente ou secret manager;
+- usuários e ACLs do OCI Cache;
+- NSGs restringindo o acesso à porta 6379.
+
+### Monitoramento
+
+O Spring Boot Actuator e o Micrometer expõem informações como:
+
+- região ativa;
+- estado dos circuit breakers;
+- falhas e retries;
+- tamanho da PEL;
+- mensagens enviadas para a DLQ;
+- latência dos comandos;
+- disponibilidade dos clusters.
+
+Em resumo, o projeto procura evitar que uma falha do OCI Cache derrube
+imediatamente a aplicação. As mensagens são processadas no modelo
+**at-least-once**, com recuperação de pendências e isolamento de mensagens
+defeituosas. Por isso, o banco ou log durável continua sendo a fonte da verdade,
+e o handler de negócio precisa ser idempotente.
+
 ## Comece aqui
 
 - [Guia completo de implementação](docs/IMPLEMENTATION_GUIDE.md): arquitetura,
   parâmetros, segurança, decisões e adaptação ao ambiente.
 - [Guia de testes](docs/TESTING.md): testes automatizados, smoke test,
   inspeção de Streams e simulação de falhas.
+- [Terraform da demo](terraform/README.md): provisionamento do OCI Cache
+  primário/DR, redes privadas, NSGs, usuários opcionais e outputs da aplicação.
 - [.env.example](.env.example): inventário copiável das variáveis de ambiente.
 - [application.yml](src/main/resources/application.yml): valores padrão e todos
   os parâmetros técnicos.
@@ -26,6 +167,7 @@ Escolha uma das opções:
 | Containers | Docker 24+ com Compose v2 | Avaliação rápida e ambiente local reproduzível |
 | Execução nativa | Java 17+, Maven 3.9+ e Docker apenas para o Valkey | Desenvolvimento e depuração na IDE |
 | OCI | Requisitos anteriores, VCN/NSG, OCI Cache e credenciais | Homologação e produção |
+| Terraform OCI | Terraform 1.6+, provider OCI, compartment e autenticação configurada | Criar os clusters e redes da demo |
 
 Para baixar, use **Download ZIP** no repositório ou:
 
@@ -168,6 +310,52 @@ OCI_CACHE_MODE=NON_SHARDED
 
 Não armazene `.env` em Git. Em produção, use OCI Vault, Kubernetes Secret ou o
 secret manager padronizado pela organização.
+
+## Provisionar a demo com Terraform
+
+O diretório [`terraform/`](terraform/) cria:
+
+- uma VCN e subnet privada em cada região, ou usa redes existentes;
+- um NSG por região liberando somente TLS/6379 dos CIDRs informados;
+- um OCI Cache primário e um OCI Cache de DR;
+- clusters `NONSHARDED` ou `SHARDED` com Valkey 8.1 por padrão;
+- criação opcional de OCI Cache users e associação dos usuários aos clusters;
+- outputs com FQDNs, OCIDs, subnet, NSG e variáveis do Spring Boot.
+
+Quickstart:
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edite compartment_id, regiões, CIDRs e OCI Cache users.
+terraform init
+terraform fmt -check -recursive
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
+terraform output spring_boot_environment
+terraform output -raw spring_boot_dotenv > ../.env.terraform
+```
+
+Para validar formatação, módulos e schema do provider em um único comando:
+
+```bash
+./scripts/terraform-check.sh
+```
+
+Revise `.env.terraform` e substitua `OCI_CACHE_PASSWORD=CHANGE_ME` pela senha
+obtida do secret manager. A senha em texto puro não é criada nem exibida pelo
+Terraform.
+
+As subnets do OCI Cache são privadas. O runtime do Spring Boot precisa ter DNS e
+rota para as duas regiões por meio da topologia aprovada pela organização, como
+DRG/remote peering, FastConnect ou VPN. O stack não cria essa conectividade
+porque ela normalmente pertence à rede central do cliente.
+
+Terraform provisiona os recursos, mas não replica automaticamente Streams entre
+regiões. A troca de endpoint é feita pelo `HaCacheRouter`; a estratégia de
+backup, reconstrução e RPO precisa ser definida conforme a criticidade dos
+dados.
 
 ## APIs para validação
 

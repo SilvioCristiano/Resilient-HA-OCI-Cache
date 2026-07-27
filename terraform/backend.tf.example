@@ -1,0 +1,10 @@
+# Renomeie para backend.tf somente depois de criar o bucket de state.
+# O backend HTTP do OCI Object Storage usa uma Pre-Authenticated Request (PAR).
+# Outra opção é executar este diretório no OCI Resource Manager.
+#
+# terraform {
+#   backend "http" {
+#     address       = "https://objectstorage.REGION.oraclecloud.com/p/PAR/n/NAMESPACE/b/BUCKET/o/terraform.tfstate"
+#     update_method = "PUT"
+#   }
+# }

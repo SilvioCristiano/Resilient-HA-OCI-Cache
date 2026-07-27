@@ -1,0 +1,50 @@
+name: Terraform validation
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "scripts/terraform-check.sh"
+      - ".github/workflows/terraform-validate.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+      - "scripts/terraform-check.sh"
+      - ".github/workflows/terraform-validate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform format
+        run: |
+          terraform fmt -check -recursive
+          echo "✅ Formatação Terraform passou"
+
+      - name: Terraform init
+        run: |
+          terraform init -backend=false -input=false
+          echo "✅ Inicialização do provider OCI passou"
+
+      - name: Terraform validate
+        run: |
+          terraform validate
+          echo "✅ Validação Terraform passou"

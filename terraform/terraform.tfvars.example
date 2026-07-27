@@ -1,0 +1,59 @@
+# Copie para terraform.tfvars e substitua os OCIDs/CIDRs.
+# Nunca faça commit de terraform.tfvars com dados sensíveis.
+
+compartment_id = "ocid1.compartment.oc1..CHANGE_ME"
+
+primary_region = "sa-saopaulo-1"
+standby_region = "sa-vinhedo-1"
+
+create_networks = true
+
+primary_vcn_cidr            = "10.10.0.0/16"
+primary_cache_subnet_cidr   = "10.10.20.0/24"
+standby_vcn_cidr            = "10.20.0.0/16"
+standby_cache_subnet_cidr   = "10.20.20.0/24"
+
+# Inclua somente CIDRs que realmente possuem rota até cada subnet do OCI Cache.
+primary_application_cidrs = [
+  "10.10.0.0/16",
+  "10.20.0.0/16",
+]
+
+standby_application_cidrs = [
+  "10.10.0.0/16",
+  "10.20.0.0/16",
+]
+
+cluster_mode       = "NONSHARDED"
+software_version   = "VALKEY_8_1"
+node_count         = 3
+node_memory_in_gbs = 2
+shard_count        = 3
+
+# Opção recomendada: crie os usuários fora deste stack, armazene a senha no
+# OCI Vault e informe pelo menos um OCID em cada lista. cache_user_name deve
+# corresponder ao username desses usuários.
+create_cache_user = false
+cache_user_name   = "orders-app"
+
+primary_existing_cache_user_ocids = [
+  # "ocid1.ocicacheuser.oc1.sa-saopaulo-1.CHANGE_ME",
+]
+
+standby_existing_cache_user_ocids = [
+  # "ocid1.ocicacheuser.oc1.sa-vinhedo-1.CHANGE_ME",
+]
+
+# Para uma demo descartável, também é possível deixar o Terraform criar o
+# usuário. O hash continua armazenado no state e deve ser protegido.
+#
+# create_cache_user = true
+# cache_user_name   = "orders-app"
+# cache_user_password_hashes = [
+#   "CHANGE_ME_SHA256_HEX",
+# ]
+
+freeform_tags = {
+  environment = "demo"
+  owner       = "platform-team"
+}
