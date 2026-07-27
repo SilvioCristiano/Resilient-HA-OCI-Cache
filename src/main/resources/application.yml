@@ -1,0 +1,125 @@
+spring:
+  application:
+    name: resilient-ha-oci-cache
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  health:
+    redis:
+      enabled: false
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+app:
+  cache:
+    regions:
+      - name: primary
+        oci-region: ${OCI_PRIMARY_REGION:sa-saopaulo-1}
+        hosts:
+          - ${OCI_CACHE_PRIMARY_FQDN:}
+        port: 6379
+        mode: ${OCI_CACHE_MODE:NON_SHARDED}
+        tls: true
+        username: ${OCI_CACHE_USERNAME:}
+        password: ${OCI_CACHE_PASSWORD:}
+        cluster-ocid: ${OCI_CACHE_PRIMARY_OCID:}
+        read-host: ${OCI_CACHE_PRIMARY_REPLICAS_FQDN:}
+        read-from-replicas: ${OCI_CACHE_READ_FROM_REPLICAS:false}
+      - name: warm-standby
+        oci-region: ${OCI_STANDBY_REGION:sa-vinhedo-1}
+        hosts:
+          - ${OCI_CACHE_STANDBY_FQDN:}
+        port: 6379
+        mode: ${OCI_CACHE_MODE:NON_SHARDED}
+        tls: true
+        username: ${OCI_CACHE_USERNAME:}
+        password: ${OCI_CACHE_PASSWORD:}
+        cluster-ocid: ${OCI_CACHE_STANDBY_OCID:}
+        read-host: ${OCI_CACHE_STANDBY_REPLICAS_FQDN:}
+        read-from-replicas: ${OCI_CACHE_READ_FROM_REPLICAS:false}
+
+    failover:
+      failure-threshold: 3
+      command-attempts: 3
+      connect-timeout: 3s
+      command-timeout: 3s
+      retry-backoff: 500ms
+      retry-max-backoff: 5s
+      retry-jitter: 0.5
+      circuit-breaker-enabled: true
+      circuit-breaker-failure-rate-threshold: 50
+      circuit-breaker-sliding-window-size: 10
+      circuit-breaker-minimum-calls: 5
+      circuit-breaker-half-open-calls: 2
+      circuit-breaker-open-duration: 10s
+      health-interval: 5s
+      cooldown: 2m
+      # Evita flapping e split-brain. Faça failback de forma controlada.
+      automatic-failback: false
+
+    stream:
+      # Hash tag obrigatório para Lua multi-key em cluster sharded.
+      key: "{orders}:stream"
+      consumer-group: orders-service
+      consumer-name: ${HOSTNAME:local}
+      batch-size: 10
+      poll-timeout: 2s
+      deduplication-ttl: 24h
+      # Reassume mensagens deixadas sem ACK por consumers mortos.
+      pending-min-idle: 1m
+      dead-letter-key: "{orders}:stream:dlq"
+      max-processing-attempts: 5
+      failure-tracking-ttl: 7d
+      dead-letter-max-length: 100000
+      pel-monitor-interval: 15s
+      consumer-enabled: ${CACHE_CONSUMER_ENABLED:true}
+      consumer-delay: 1s
+
+    spring:
+      enabled: ${SPRING_CACHE_ENABLED:true}
+      # Inclua aplicação e ambiente para impedir colisões entre serviços.
+      namespace: ${spring.application.name}:${APP_ENV:prod}
+      default-ttl: 10m
+      cache-names:
+        - customers
+        - products
+      ttl-by-cache:
+        customers: 5m
+        products: 30m
+
+    provisioning:
+      # Prefira warm standby. On-demand tem RTO de vários minutos.
+      enabled: ${OCI_CACHE_PROVISIONING_ENABLED:false}
+      authentication: ${OCI_AUTHENTICATION:INSTANCE_PRINCIPAL}
+      config-profile: ${OCI_CONFIG_PROFILE:DEFAULT}
+      destination-region: ${OCI_STANDBY_REGION:sa-vinhedo-1}
+      display-name: ${OCI_CACHE_DR_NAME:orders-cache-dr}
+      compartment-ocid: ${OCI_COMPARTMENT_OCID:}
+      subnet-ocid: ${OCI_STANDBY_SUBNET_OCID:}
+      nsg-ocids: ${OCI_STANDBY_NSG_OCIDS:}
+      mode: ${OCI_CACHE_DR_MODE:${OCI_CACHE_MODE:NON_SHARDED}}
+      node-count: 3
+      shard-count: ${OCI_CACHE_DR_SHARD_COUNT:3}
+      engine-version: ${OCI_CACHE_DR_ENGINE_VERSION:VALKEY_8_1}
+      node-memory-gb: 2
+      backup-ocid: ${OCI_CACHE_BACKUP_OCID:}
+      oci-cache-user-ocids: ${OCI_CACHE_USER_OCIDS:}
+      ready-timeout: 30m
+      poll-interval: 20s
+      api-connect-timeout: 5s
+      api-read-timeout: 30s

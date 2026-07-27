@@ -1,0 +1,12 @@
+target/
+build/
+.gradle/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*.log
+.env
+.tmp/
+*.pptx.inspect.ndjson
+~$*.pptx

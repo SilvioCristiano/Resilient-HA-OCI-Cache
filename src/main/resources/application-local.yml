@@ -1,0 +1,12 @@
+app:
+  cache:
+    regions:
+      - name: local
+        oci-region: local
+        hosts:
+          - ${OCI_CACHE_PRIMARY_FQDN:localhost}
+        port: 6379
+        mode: NON_SHARDED
+        tls: false
+    stream:
+      consumer-name: local-consumer

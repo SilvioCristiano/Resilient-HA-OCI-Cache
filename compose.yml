@@ -1,0 +1,28 @@
+services:
+  redis:
+    image: valkey/valkey:8.1-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    volumes:
+      - valkey-data:/data
+
+  app:
+    build:
+      context: .
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      OCI_CACHE_PRIMARY_FQDN: redis
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  valkey-data:
