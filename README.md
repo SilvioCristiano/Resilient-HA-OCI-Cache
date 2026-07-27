@@ -96,17 +96,7 @@ automaticamente:
 
 ## Arquitetura high level
 
-```mermaid
-flowchart LR
-    Client["Sistemas clientes"] --> App["Spring Boot<br/>producer, consumer e cache"]
-    App --> Router["Roteamento resiliente"]
-    Router --> Primary["OCI Cache<br/>região primária"]
-    Router -. failover .-> Standby["OCI Cache<br/>região de DR"]
-    Router -. provisionamento opcional .-> OCI["OCI Control Plane"]
-    Primary --> Obs["OCI Monitoring<br/>Micrometer / Prometheus"]
-    Standby --> Obs
-    App --> DB["Banco ou sistema definitivo"]
-```
+![Arquitetura high level do OCI Cache com continuidade regional e failover controlado](docs/images/oci-cache-high-level.png)
 
 O OCI Cache acelera acesso e transporta eventos, mas não substitui o banco ou
 log durável cross-region quando os dados não podem ser reconstruídos. O

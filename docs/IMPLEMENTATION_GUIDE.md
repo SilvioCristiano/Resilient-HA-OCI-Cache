@@ -113,7 +113,7 @@ sequenceDiagram
         C->>R: XACK
     else erro transitório abaixo do limite
         C->>R: INCR idempotente + TTL
-        Note over C,R: sem ACK; mensagem permanece na PEL
+        Note over C,R: sem ACK, mensagem permanece na PEL
     else erro permanente ou limite atingido
         C->>R: Lua: XADD DLQ + XACK + marcador
         Note over C,R: operação atômica e idempotente
