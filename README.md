@@ -107,6 +107,10 @@ flowchart LR
     Standby --> Obs
     App --> DB["Banco ou sistema definitivo"]
 ```
+![Arquitetura high level](imagem1.png "Arquitetura high level") 
+
+## Arquitetura técnica
+![Arquitetura técnica](imagem2.png "Arquitetura técnica")  
 
 O OCI Cache acelera acesso e transporta eventos, mas não substitui o banco ou
 log durável cross-region quando os dados não podem ser reconstruídos. O
